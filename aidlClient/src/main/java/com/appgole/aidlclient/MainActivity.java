@@ -5,13 +5,17 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Message;
+import android.os.Messenger;
 import android.os.RemoteException;
 import android.util.Log;
 import android.view.View;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.appgole.aidldemo.IUserAidlCallback;
@@ -21,17 +25,19 @@ import com.appgole.aidldemo.User;
 import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
-    private  IUserAidlInterface userAidlInterface;
+    private IUserAidlInterface userAidlInterface;
     private ServiceConnection serviceConnection;
     private TextView textView;
     private int counter;
+    private ServiceConnection messengerConn;
+    private Messenger serverMessenger;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         textView = findViewById(R.id.textView);
     }
-
 
 
     public void addUser(View view) {
@@ -122,5 +128,60 @@ public class MainActivity extends AppCompatActivity {
                 userAidlInterface = null;
             }
         }
+    }
+
+
+    private Messenger clientMessenger = new Messenger(new Handler(new Handler.Callback() {
+        @Override
+        public boolean handleMessage(@NonNull Message msg) {
+            String response = msg.getData().getString("response");
+            textView.setText(response);
+            return true;
+        }
+    }));
+
+
+    public void bindMessenger(View view) {
+        messengerConn = new ServiceConnection() {
+            @Override
+            public void onServiceConnected(ComponentName name, IBinder service) {
+                serverMessenger = new Messenger(service);
+            }
+
+            @Override
+            public void onServiceDisconnected(ComponentName name) {
+                serverMessenger = null;
+            }
+        };
+        Intent service = new Intent();
+        service.setComponent(new ComponentName("com.appgole.aidldemo", "com.appgole.aidldemo.MessengerService"));
+        bindService(service, messengerConn, Context.BIND_AUTO_CREATE);
+    }
+
+    public void sendMessenger(View view) {
+        final int FLAG_MSG_FROM_CLIENT = 10086;
+        if (serverMessenger != null) {
+            Message obtain = Message.obtain();
+            obtain.what = FLAG_MSG_FROM_CLIENT;
+            Bundle data = new Bundle();
+            data.putString("request", "测试请求数据" + System.currentTimeMillis());
+            obtain.setData(data);
+            obtain.replyTo = clientMessenger;
+            try {
+                serverMessenger.send(obtain);
+            } catch (RemoteException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+
+    @Override
+    protected void onDestroy() {
+        if (messengerConn != null) {
+            unbindService(messengerConn);
+            messengerConn = null;
+        }
+        super.onDestroy();
     }
 }
